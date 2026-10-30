@@ -1,0 +1,11 @@
+
+{
+  "serverUrl": "https://sculwave.com",
+  "activationKey": "",
+  "serverName": "Bedrock Server",
+  "platform": "bedrock",
+  "pluginVersion": "1.1.0",
+  "minecraftVersion": "1.26.60.6",
+  "entryPoint": "bedrock",
+  "entryPointPriority": 0
+}

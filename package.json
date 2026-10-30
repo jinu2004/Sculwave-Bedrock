@@ -1,0 +1,22 @@
+{
+  "devDependencies": {
+    "@minecraft/server": "^2.9.0",
+    "@minecraft/server-net": "^1.0.0-beta.1.26.60-stable",
+    "typescript": "^6.0.3"
+  },
+  "name": "the-hollow",
+  "version": "1.1.0",
+  "description": "",
+  "main": "BP/scripts/main.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "node build.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@minecraft/server-ui": "^2.0.0"
+  }
+}
