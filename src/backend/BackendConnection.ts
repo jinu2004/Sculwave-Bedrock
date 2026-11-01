@@ -31,7 +31,7 @@ export class BackendConnection {
     private socket: SocketIOClient | undefined;
     private reconnectScheduled = false;
     private activationInProgress = false;
-    private heartbeatIntervalMs = 15000;
+    private heartbeatIntervalMs = 1000;
     private shuttingDown = false;
 
     private roomCode = "";
@@ -133,7 +133,7 @@ export class BackendConnection {
 
             this.backendId = data.backendId;
             this.instanceId = data.instanceId;
-            this.heartbeatIntervalMs = Math.max(1000, data.heartbeatInterval ?? 15000);
+            this.heartbeatIntervalMs = 1000;
 
             this.onActivated({
                 backendId: this.backendId,

@@ -18,7 +18,7 @@ const MINECRAFT_VERSION = "1.26.60";
 let serverRoomCode = "";
 let instanceId = "";
 let backendId = "";
-let heartbeatIntervalMs = 5000;
+let heartbeatIntervalMs = 1000;
 let lastHeartbeatAt = 0;
 let backendConnection: BackendConnection | undefined;
 let initializationInProgress = false;
@@ -392,7 +392,7 @@ async function initializeBackend(): Promise<void> {
             backendId,
             instanceId,
             (world.getDynamicProperty(SERVER_NAME_PROPERTY) as string | undefined)
-                ?? BackendConfig.serverName,
+            ?? BackendConfig.serverName,
             versionInfo.version,
             MINECRAFT_VERSION,
             (state) => {

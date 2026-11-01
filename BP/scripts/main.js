@@ -14,7 +14,7 @@ const MINECRAFT_VERSION = "1.26.60";
 let serverRoomCode = "";
 let instanceId = "";
 let backendId = "";
-let heartbeatIntervalMs = 5000;
+let heartbeatIntervalMs = 1000;
 let lastHeartbeatAt = 0;
 let backendConnection;
 let initializationInProgress = false;

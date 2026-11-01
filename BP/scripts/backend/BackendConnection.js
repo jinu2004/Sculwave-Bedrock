@@ -14,7 +14,7 @@ export class BackendConnection {
         this.onRoom = onRoom;
         this.reconnectScheduled = false;
         this.activationInProgress = false;
-        this.heartbeatIntervalMs = 15000;
+        this.heartbeatIntervalMs = 1000;
         this.shuttingDown = false;
         this.roomCode = "";
         this.authToken = "";
@@ -80,7 +80,7 @@ export class BackendConnection {
             }
             this.backendId = data.backendId;
             this.instanceId = data.instanceId;
-            this.heartbeatIntervalMs = Math.max(1000, data.heartbeatInterval ?? 15000);
+            this.heartbeatIntervalMs = 5000;
             this.onActivated({
                 backendId: this.backendId,
                 instanceId: this.instanceId,
