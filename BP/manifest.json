@@ -1,7 +1,7 @@
 {
     "format_version": 2,
     "header": {
-        "name": "EchoWave",
+        "name": "Sculwave Bedrock",
         "description": "Communicator between minecraft and server",
         "uuid": "723b51e9-890e-43ba-af91-8fbe10be1d9b",
         "version": [

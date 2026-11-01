@@ -165,8 +165,13 @@ sudo cp -a "$BP_SOURCE/." "$BP_WORLD/"
 
 echo "📦 Deploying resource pack to world directory..."
 sudo mkdir -p "$RP_WORLD"
-sudo cp -a "$RP_SOURCE/." "$RP_WORLD/"
+sudo rsync -a --delete "$RP_SOURCE/" "$RP_WORLD/"
 
+echo "🔍 Verifying resource pack..."
+sudo diff -qr "$RP_SOURCE" "$RP_WORLD" || {
+  echo "ERROR: Resource pack deployment does not match source."
+  exit 1
+}
 # --------------------------------------------------
 # Ownership
 # --------------------------------------------------
