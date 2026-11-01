@@ -775,21 +775,22 @@ system.afterEvents.scriptEventReceive.subscribe((event) => {
 
 
 
+const RADIO_ID = "prox:sculwave_radio";
+const RADIO_GIVEN_PROPERTY = "sculwave:radio_given";
+
 world.afterEvents.playerSpawn.subscribe((event) => {
-
     if (!event.initialSpawn) return;
-
     const player = event.player;
-
     if (isVoiceBanned(player.name)) return;
-
-    const inv = player.getComponent("minecraft:inventory")?.container;
-
-    if (inv) {
-        inv.addItem(new ItemStack(RADIO_ID, 1));
-    }
+    if (player.getDynamicProperty(RADIO_GIVEN_PROPERTY) === true) return;
+    system.run(() => {
+        const inv = player.getComponent("minecraft:inventory")?.container;
+        if (!inv) return;
+        const existing = Array.from({ length: inv.size }, (_, i) => inv.getItem(i)).some(item => item?.typeId === RADIO_ID);
+        if (!existing) inv.addItem(new ItemStack(RADIO_ID, 1));
+        player.setDynamicProperty(RADIO_GIVEN_PROPERTY, true);
+    });
 });
-
 
 world.beforeEvents.itemUse.subscribe((event) => {
     const player = event.source as Player;
@@ -828,32 +829,6 @@ system.runInterval(() => {
 }, 20);
 
 
-const RADIO_ID = "prox:sculwave_radio";
-
-system.runInterval(() => {
-    for (const player of world.getAllPlayers()) {
-
-        if (isVoiceBanned(player.name)) continue;
-
-        const inv = player.getComponent("minecraft:inventory")?.container;
-        if (!inv) continue;
-
-        let hasRadio = false;
-
-        for (let i = 0; i < inv.size; i++) {
-            const item = inv.getItem(i);
-
-            if (item?.typeId === RADIO_ID) {
-                hasRadio = true;
-                break;
-            }
-        }
-
-        if (!hasRadio) {
-            inv.addItem(new ItemStack(RADIO_ID, 1));
-        }
-    }
-}, 100);
 
 
 

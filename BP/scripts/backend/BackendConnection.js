@@ -80,7 +80,7 @@ export class BackendConnection {
             }
             this.backendId = data.backendId;
             this.instanceId = data.instanceId;
-            this.heartbeatIntervalMs = 5000;
+            this.heartbeatIntervalMs = 1000;
             this.onActivated({
                 backendId: this.backendId,
                 instanceId: this.instanceId,
