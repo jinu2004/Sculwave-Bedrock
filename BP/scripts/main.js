@@ -19,9 +19,47 @@ let lastHeartbeatAt = 0;
 let backendConnection;
 let initializationInProgress = false;
 let activationRetryScheduled = false;
+// Custom glyphs from RP/font/glyph_E4.png
+const MIC_IDLE_ICON = "\uE400";
+const MIC_MUTED_ICON = "\uE401";
+const MIC_SPEAKING_ICON = "\uE402";
 const parties = new Map();
 const pendingInvites = new Map();
 const playerSettings = new Map();
+const voiceStates = new Map();
+function updateNameTag(player) {
+    const state = voiceStates.get(player.name.toLowerCase());
+    const inGameMuted = getPlayerSettings(player).isMuted;
+    let tag = player.name; // not connected to the web app: plain name
+    if (inGameMuted || (state?.connected && state.muted)) {
+        tag = `${MIC_MUTED_ICON} ${player.name}`;
+    }
+    else if (state?.connected && state.speaking) {
+        tag = `${MIC_SPEAKING_ICON} ${player.name}`;
+    }
+    else if (state?.connected) {
+        tag = `${MIC_IDLE_ICON} ${player.name}`;
+    }
+    if (player.nameTag !== tag)
+        player.nameTag = tag;
+}
+function handleVoiceState(state) {
+    const key = state.gamertag.toLowerCase();
+    if (state.connected)
+        voiceStates.set(key, state);
+    else
+        voiceStates.delete(key);
+    const player = world.getAllPlayers().find(p => p.name.toLowerCase() === key);
+    if (player && !isVoiceBanned(player.name))
+        updateNameTag(player);
+}
+function resetVoiceStates() {
+    voiceStates.clear();
+    for (const player of world.getAllPlayers()) {
+        if (!isVoiceBanned(player.name))
+            updateNameTag(player);
+    }
+}
 function createParty(player) {
     const settings = getPlayerSettings(player);
     if (settings.groupId) {
@@ -204,10 +242,12 @@ async function showMemberActions(owner, memberName) {
                 memberSettings.groupId = null;
             }
             owner.sendMessage(`§cRemoved ${memberName} from the party.`);
+            system.run(() => showManageMembersMenu(owner));
             break;
         case 1:
             party.owner = memberName;
             owner.sendMessage(`§aOwnership transferred to ${memberName}.`);
+            system.run(() => showpartiesMenu(owner));
             break;
     }
     system.run(() => showManageMembersMenu(owner));
@@ -245,7 +285,7 @@ async function initializeBackend() {
             world.sendMessage(`§7Open Web App: §fhttps://sculwave.com`);
             world.sendMessage(`§7Enter Code: §e§l${roomCode}`);
             console.info(`[Sculwave] Room Code: ${roomCode}`);
-        });
+        }, handleVoiceState, resetVoiceStates);
         const activated = await backendConnection.activate();
         if (!activated) {
             scheduleActivationRetry();
@@ -285,9 +325,7 @@ function getPlayerData() {
             platform: BEDROCK_PLATFORM,
             device: "unknown",
         });
-        player.nameTag = settings.isMuted
-            ? `[muted] ${player.name}`
-            : `[unmuted] ${player.name}`;
+        updateNameTag(player);
     }
     return playerData;
 }
@@ -365,6 +403,10 @@ async function showpartiesMenu(player) {
                 player.sendMessage("§c[Sculwave] Party not found.");
                 break;
             }
+            if (party.owner === player.name) {
+                system.run(() => showManageMembersMenu(player));
+                break;
+            }
             const memberForm = new ActionFormData()
                 .title("§bParty Members")
                 .body(`§7Owner: §e${party.owner}\n\n` +
@@ -392,6 +434,11 @@ async function showpartiesMenu(player) {
                 break;
             }
             if (party.owner === player.name) {
+                for (const m of party.members) {
+                    const s = playerSettings.get(m);
+                    if (s)
+                        s.groupId = null;
+                }
                 parties.delete(settings.groupId);
                 player.sendMessage("§c[Sculwave] Party disbanded.");
             }
@@ -445,6 +492,8 @@ async function showVoiceMenu(player) {
     }
 }
 system.afterEvents.scriptEventReceive.subscribe((event) => {
+    if (!event.id.startsWith("sculwave:"))
+        return;
     const sender = event.sourceEntity;
     if (!(sender instanceof Player)) {
         return;
@@ -552,26 +601,6 @@ world.afterEvents.worldLoad.subscribe(() => {
 system.runInterval(() => {
     sendHeartbeatIfDue();
 }, 20);
-// const RADIO_ID = "prox:sculwave_mic";
-// system.runInterval(() => {
-//     for (const player of world.getAllPlayers()) {
-//         if (isVoiceBanned(player.name)) continue;
-//         const inv = player.getComponent("minecraft:inventory")?.container;
-//         if (!inv) continue;
-//         let hasRadio = false;
-//         for (let i = 0; i < inv.size; i++) {
-//             const item = inv.getItem(i);
-//             if (item?.typeId === RADIO_ID) {
-//                 hasRadio = true;
-//                 break;
-//             }
-//         }
-//         if (!hasRadio) {
-//             inv.addItem(new ItemStack(RADIO_ID, 1));
-//         }
-//     }
-// }, 100);
-// Show the active code to individual late-joining players when they spawn
 world.afterEvents.playerSpawn.subscribe((event) => {
     const player = event.player;
     if (isVoiceBanned(player.name)) {
@@ -584,19 +613,25 @@ world.afterEvents.playerSpawn.subscribe((event) => {
     }
 });
 world.afterEvents.playerLeave.subscribe((event) => {
-    const playerName = event.playerName;
-    playerSettings.delete(playerName);
-    for (const [partieOwnerName, partie] of parties.entries()) {
-        if (partie.owner === playerName) {
-            for (const member of partie.members) {
-                const settings = playerSettings.get(member);
-                if (settings) {
-                    settings.groupId = null;
-                }
+    const name = event.playerName;
+    playerSettings.delete(name);
+    pendingInvites.delete(name);
+    voiceStates.delete(name.toLowerCase());
+    for (const [partyId, party] of parties.entries()) {
+        if (party.owner === name) {
+            for (const m of party.members) {
+                const s = playerSettings.get(m);
+                if (s)
+                    s.groupId = null;
             }
-            parties.delete(partieOwnerName);
-            console.warn(`[Sculwave] Group "${partieOwnerName}" disbanded because owner left.`);
+            parties.delete(partyId);
         }
+        else {
+            party.members.delete(name);
+        }
+    }
+    for (const [target, invites] of pendingInvites.entries()) {
+        pendingInvites.set(target, invites.filter(i => parties.has(i.partyId)));
     }
 });
 //# sourceMappingURL=main.js.map
