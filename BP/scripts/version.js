@@ -1,5 +1,5 @@
 export const versionInfo = {
     version: "1.1.0",
-    build: "261102.0455" // The script will automatically overwrite this value
+    build: "261102.0502" // The script will automatically overwrite this value
 };
 //# sourceMappingURL=version.js.map

@@ -519,9 +519,13 @@ world.afterEvents.playerSpawn.subscribe((event) => {
     if (isVoiceBanned(player.name))
         return;
     const inv = player.getComponent("minecraft:inventory")?.container;
-    if (inv) {
-        inv.addItem(new ItemStack(RADIO_ID, 1));
+    if (!inv)
+        return;
+    for (let i = 0; i < inv.size; i++) {
+        if (inv.getItem(i)?.typeId === RADIO_ID)
+            return;
     }
+    inv.addItem(new ItemStack(RADIO_ID, 1));
 });
 world.beforeEvents.itemUse.subscribe((event) => {
     const player = event.source;

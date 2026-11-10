@@ -1,9 +1,0 @@
-{
-  "resource_pack_name": "EchoWave Resource Pack",
-  "texture_name": "atlas.items",
-  "texture_data": {
-    "echowave_radio_icon": {
-      "textures": "textures/items/sound"
-    }
-  }
-}
