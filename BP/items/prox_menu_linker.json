@@ -14,10 +14,6 @@
         "value": "Sculwave Mic"
       },
       "minecraft:hand_equipped": false,
-      "minecraft:keep_on_death": {},
-      "minecraft:lock_in_inventory": {
-        "value": "lock_in_inventory"
-      },
       "minecraft:allow_off_hand": false
     }
   }
