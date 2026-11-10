@@ -104,21 +104,34 @@ function ensureMic(player: Player): void {
 
 
 
-function updateNameTag(player: Player): void {
+function getMicIcon(player: Player): string {
     const state = voiceStates.get(player.name.toLowerCase());
-    const inGameMuted = getPlayerSettings(player).isMuted;
 
-    let tag = player.name; // not connected to the web app: plain name
+    if (getPlayerSettings(player).isMuted || (state?.connected && state.muted)) return MIC_MUTED_ICON;
+    if (state?.connected && state.speaking) return MIC_SPEAKING_ICON;
+    if (state?.connected) return MIC_IDLE_ICON;
+    return ""; // not connected to the web app
+}
+const hudIcon = new Map<string, string>();
 
-    if (inGameMuted || (state?.connected && state.muted)) {
-        tag = `${MIC_MUTED_ICON} ${player.name}`;
-    } else if (state?.connected && state.speaking) {
-        tag = `${MIC_SPEAKING_ICON} ${player.name}`;
-    } else if (state?.connected) {
-        tag = `${MIC_IDLE_ICON} ${player.name}`;
-    }
 
+function updateHud(player: Player): void {
+    const icon = getMicIcon(player);
+    const prev = hudIcon.get(player.name) ?? "";
+
+    if (icon === prev) return;      // nothing changed: do nothing
+
+    hudIcon.set(player.name, icon);
+    if (icon) player.onScreenDisplay.setActionBar(icon);   // show once, it fades by itself
+}
+
+
+function updateNameTag(player: Player): void {
+    const icon = getMicIcon(player);
+    const tag = icon ? `${icon} ${player.name}` : player.name;
     if (player.nameTag !== tag) player.nameTag = tag;
+
+    updateHud(player);
 }
 
 function handleVoiceState(state: VoiceStatePayload): void {

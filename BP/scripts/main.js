@@ -1,9 +1,8 @@
-import { world, system, Player, ItemStack } from '@minecraft/server';
+import { world, system, Player, ItemStack, ItemLockMode } from '@minecraft/server';
 import { BackendConnection } from './backend/BackendConnection';
 import { versionInfo } from './version';
 import { BackendConfig } from './generated/config';
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
-const SERVER_URL = BackendConfig.serverUrl;
 const MENU_ITEM_ID = "prox:sculwave_mic";
 const ACTIVATION_KEY_PROPERTY = "sculwave:activationKey";
 const INSTANCE_ID_PROPERTY = "sculwave:instance";
@@ -23,25 +22,70 @@ let activationRetryScheduled = false;
 const MIC_IDLE_ICON = "\uE400";
 const MIC_MUTED_ICON = "\uE401";
 const MIC_SPEAKING_ICON = "\uE402";
+const SERVER_URL_PROPERTY = "sculwave:serverUrl";
+function getServerUrl() {
+    return (world.getDynamicProperty(SERVER_URL_PROPERTY)
+        ?? BackendConfig.serverUrl).trim();
+}
 const parties = new Map();
 const pendingInvites = new Map();
 const playerSettings = new Map();
 const voiceStates = new Map();
-function updateNameTag(player) {
+function ensureMic(player) {
+    if (!player.isValid || isVoiceBanned(player.name))
+        return;
+    const inv = player.getComponent("minecraft:inventory")?.container;
+    if (!inv)
+        return;
+    let found = false;
+    for (let i = 0; i < inv.size; i++) {
+        const item = inv.getItem(i);
+        if (item?.typeId !== MENU_ITEM_ID)
+            continue;
+        if (found) { // remove duplicate copies
+            inv.setItem(i, undefined);
+            continue;
+        }
+        found = true;
+        if (item.lockMode !== ItemLockMode.inventory || !item.keepOnDeath) {
+            item.lockMode = ItemLockMode.inventory;
+            item.keepOnDeath = true;
+            inv.setItem(i, item); // write the changed item back
+        }
+    }
+    if (!found) {
+        const mic = new ItemStack(MENU_ITEM_ID, 1);
+        mic.lockMode = ItemLockMode.inventory;
+        mic.keepOnDeath = true;
+        inv.addItem(mic);
+    }
+}
+function getMicIcon(player) {
     const state = voiceStates.get(player.name.toLowerCase());
-    const inGameMuted = getPlayerSettings(player).isMuted;
-    let tag = player.name; // not connected to the web app: plain name
-    if (inGameMuted || (state?.connected && state.muted)) {
-        tag = `${MIC_MUTED_ICON} ${player.name}`;
-    }
-    else if (state?.connected && state.speaking) {
-        tag = `${MIC_SPEAKING_ICON} ${player.name}`;
-    }
-    else if (state?.connected) {
-        tag = `${MIC_IDLE_ICON} ${player.name}`;
-    }
+    if (getPlayerSettings(player).isMuted || (state?.connected && state.muted))
+        return MIC_MUTED_ICON;
+    if (state?.connected && state.speaking)
+        return MIC_SPEAKING_ICON;
+    if (state?.connected)
+        return MIC_IDLE_ICON;
+    return ""; // not connected to the web app
+}
+const hudIcon = new Map();
+function updateHud(player) {
+    const icon = getMicIcon(player);
+    const prev = hudIcon.get(player.name) ?? "";
+    if (icon === prev)
+        return; // nothing changed: do nothing
+    hudIcon.set(player.name, icon);
+    if (icon)
+        player.onScreenDisplay.setActionBar(icon); // show once, it fades by itself
+}
+function updateNameTag(player) {
+    const icon = getMicIcon(player);
+    const tag = icon ? `${icon} ${player.name}` : player.name;
     if (player.nameTag !== tag)
         player.nameTag = tag;
+    updateHud(player);
 }
 function handleVoiceState(state) {
     const key = state.gamertag.toLowerCase();
@@ -270,7 +314,7 @@ async function initializeBackend() {
     initializationInProgress = true;
     try {
         backendConnection?.disconnect();
-        backendConnection = new BackendConnection(SERVER_URL, activationKey, backendId, instanceId, world.getDynamicProperty(SERVER_NAME_PROPERTY)
+        backendConnection = new BackendConnection(getServerUrl(), activationKey, backendId, instanceId, world.getDynamicProperty(SERVER_NAME_PROPERTY)
             ?? BackendConfig.serverName, versionInfo.version, MINECRAFT_VERSION, (state) => {
             backendId = state.backendId;
             instanceId = state.instanceId;
@@ -282,7 +326,6 @@ async function initializeBackend() {
             if (!roomCode)
                 return;
             world.sendMessage(`§a[Sculwave] Proximity Voice activated!`);
-            world.sendMessage(`§7Open Web App: §fhttps://sculwave.com`);
             world.sendMessage(`§7Enter Code: §e§l${roomCode}`);
             console.info(`[Sculwave] Room Code: ${roomCode}`);
         }, handleVoiceState, resetVoiceStates);
@@ -560,22 +603,13 @@ system.afterEvents.scriptEventReceive.subscribe((event) => {
         }
     }
 });
-const RADIO_ID = "prox:sculwave_mic";
 world.afterEvents.playerSpawn.subscribe((event) => {
-    if (!event.initialSpawn)
-        return;
-    const player = event.player;
-    if (isVoiceBanned(player.name))
-        return;
-    const inv = player.getComponent("minecraft:inventory")?.container;
-    if (!inv)
-        return;
-    for (let i = 0; i < inv.size; i++) {
-        if (inv.getItem(i)?.typeId === RADIO_ID)
-            return;
-    }
-    inv.addItem(new ItemStack(RADIO_ID, 1));
+    ensureMic(event.player); // runs on join and on respawn
 });
+system.runInterval(() => {
+    for (const player of world.getAllPlayers())
+        ensureMic(player);
+}, 100);
 world.beforeEvents.itemUse.subscribe((event) => {
     const player = event.source;
     if (isVoiceBanned(player.name)) {
