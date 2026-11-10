@@ -1,5 +1,5 @@
 import { world, system, Player, ItemStack } from '@minecraft/server';
-import { BackendConnection, BackendPlayerPayload } from './backend/BackendConnection';
+import { BackendConnection, BackendPlayerPayload, VoiceStatePayload } from './backend/BackendConnection';
 import { versionInfo } from './version';
 import { BackendConfig } from './generated/config';
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
@@ -23,6 +23,16 @@ let lastHeartbeatAt = 0;
 let backendConnection: BackendConnection | undefined;
 let initializationInProgress = false;
 let activationRetryScheduled = false;
+// Custom glyphs from RP/font/glyph_E4.png
+const MIC_IDLE_ICON = "\uE400";
+const MIC_MUTED_ICON = "\uE401";
+const MIC_SPEAKING_ICON = "\uE402";
+
+
+
+
+
+
 
 
 
@@ -47,6 +57,42 @@ const pendingInvites = new Map<string, PartyInvite[]>();
 
 const playerSettings = new Map<string, PlayerSettings>()
 
+
+const voiceStates = new Map<string, VoiceStatePayload>();
+
+function updateNameTag(player: Player): void {
+    const state = voiceStates.get(player.name.toLowerCase());
+    const inGameMuted = getPlayerSettings(player).isMuted;
+
+    let tag = player.name; // not connected to the web app: plain name
+
+    if (inGameMuted || (state?.connected && state.muted)) {
+        tag = `${MIC_MUTED_ICON} ${player.name}`;
+    } else if (state?.connected && state.speaking) {
+        tag = `${MIC_SPEAKING_ICON} ${player.name}`;
+    } else if (state?.connected) {
+        tag = `${MIC_IDLE_ICON} ${player.name}`;
+    }
+
+    if (player.nameTag !== tag) player.nameTag = tag;
+}
+
+function handleVoiceState(state: VoiceStatePayload): void {
+    const key = state.gamertag.toLowerCase();
+
+    if (state.connected) voiceStates.set(key, state);
+    else voiceStates.delete(key);
+
+    const player = world.getAllPlayers().find(p => p.name.toLowerCase() === key);
+    if (player && !isVoiceBanned(player.name)) updateNameTag(player);
+}
+
+function resetVoiceStates(): void {
+    voiceStates.clear();
+    for (const player of world.getAllPlayers()) {
+        if (!isVoiceBanned(player.name)) updateNameTag(player);
+    }
+}
 
 
 
@@ -334,11 +380,13 @@ async function showMemberActions(
             const memberSettings = playerSettings.get(memberName);
             if (memberSettings) { memberSettings.groupId = null; }
             owner.sendMessage(`§cRemoved ${memberName} from the party.`);
+            system.run(() => showManageMembersMenu(owner));
             break;
 
         case 1:
             party.owner = memberName;
             owner.sendMessage(`§aOwnership transferred to ${memberName}.`);
+            system.run(() => showpartiesMenu(owner));
             break;
     }
 
@@ -404,6 +452,7 @@ async function initializeBackend(): Promise<void> {
                 world.setDynamicProperty(INSTANCE_ID_PROPERTY, instanceId);
             },
             (roomCode) => {
+                
                 serverRoomCode = roomCode;
 
                 if (!roomCode) return;
@@ -413,6 +462,7 @@ async function initializeBackend(): Promise<void> {
                 world.sendMessage(`§7Enter Code: §e§l${roomCode}`);
                 console.info(`[Sculwave] Room Code: ${roomCode}`);
             },
+            handleVoiceState,resetVoiceStates
         );
 
         const activated = await backendConnection.activate();
@@ -459,9 +509,9 @@ function getPlayerData(): BackendPlayerPayload[] {
             device: "unknown",
         });
 
-        player.nameTag = settings.isMuted
-            ? `[muted] ${player.name}`
-            : `[unmuted] ${player.name}`;
+        updateNameTag(player);
+
+
     }
 
     return playerData;
@@ -568,6 +618,11 @@ async function showpartiesMenu(player: Player) {
                 break;
             }
 
+            if (party.owner === player.name) {
+                system.run(() => showManageMembersMenu(player));
+                break;
+            }
+
             const memberForm = new ActionFormData()
                 .title("§bParty Members")
                 .body(
@@ -612,10 +667,12 @@ async function showpartiesMenu(player: Player) {
             }
 
             if (party.owner === player.name) {
-
+                for (const m of party.members) {
+                    const s = playerSettings.get(m);
+                    if (s) s.groupId = null;
+                }
                 parties.delete(settings.groupId);
                 player.sendMessage("§c[Sculwave] Party disbanded.");
-
             } else {
                 party.members.delete(player.name);
                 player.sendMessage("§c[Sculwave] Left party.");
@@ -680,6 +737,7 @@ async function showVoiceMenu(player: Player) {
 
 system.afterEvents.scriptEventReceive.subscribe((event) => {
 
+    if (!event.id.startsWith("sculwave:")) return;
     const sender = event.sourceEntity;
 
     if (!(sender instanceof Player)) {
@@ -776,15 +834,15 @@ const RADIO_ID = "prox:sculwave_mic";
 
 
 world.afterEvents.playerSpawn.subscribe((event) => {
-  if (!event.initialSpawn) return;
-  const player = event.player;
-  if (isVoiceBanned(player.name)) return;
-  const inv = player.getComponent("minecraft:inventory")?.container;
-  if (!inv) return;
-  for (let i = 0; i < inv.size; i++) {
-    if (inv.getItem(i)?.typeId === RADIO_ID) return;
-  }
-  inv.addItem(new ItemStack(RADIO_ID, 1));
+    if (!event.initialSpawn) return;
+    const player = event.player;
+    if (isVoiceBanned(player.name)) return;
+    const inv = player.getComponent("minecraft:inventory")?.container;
+    if (!inv) return;
+    for (let i = 0; i < inv.size; i++) {
+        if (inv.getItem(i)?.typeId === RADIO_ID) return;
+    }
+    inv.addItem(new ItemStack(RADIO_ID, 1));
 });
 
 
@@ -825,37 +883,7 @@ system.runInterval(() => {
 }, 20);
 
 
-// const RADIO_ID = "prox:sculwave_mic";
 
-// system.runInterval(() => {
-//     for (const player of world.getAllPlayers()) {
-
-//         if (isVoiceBanned(player.name)) continue;
-
-//         const inv = player.getComponent("minecraft:inventory")?.container;
-//         if (!inv) continue;
-
-//         let hasRadio = false;
-
-//         for (let i = 0; i < inv.size; i++) {
-//             const item = inv.getItem(i);
-
-//             if (item?.typeId === RADIO_ID) {
-//                 hasRadio = true;
-//                 break;
-//             }
-//         }
-
-//         if (!hasRadio) {
-//             inv.addItem(new ItemStack(RADIO_ID, 1));
-//         }
-//     }
-// }, 100);
-
-
-
-
-// Show the active code to individual late-joining players when they spawn
 world.afterEvents.playerSpawn.subscribe((event) => {
     const player = event.player;
 
@@ -871,26 +899,25 @@ world.afterEvents.playerSpawn.subscribe((event) => {
 });
 
 world.afterEvents.playerLeave.subscribe((event) => {
+    const name = event.playerName;
+    playerSettings.delete(name);
+    pendingInvites.delete(name);
+    voiceStates.delete(name.toLowerCase());
 
-    const playerName = event.playerName;
-    playerSettings.delete(playerName);
-    for (const [partieOwnerName, partie] of parties.entries()) {
-        if (partie.owner === playerName) {
-            for (const member of partie.members) {
-
-                const settings = playerSettings.get(member);
-
-                if (settings) {
-                    settings.groupId = null;
-                }
-
+    for (const [partyId, party] of parties.entries()) {
+        if (party.owner === name) {
+            for (const m of party.members) {
+                const s = playerSettings.get(m);
+                if (s) s.groupId = null;
             }
-            parties.delete(partieOwnerName);
-            console.warn(
-                `[Sculwave] Group "${partieOwnerName}" disbanded because owner left.`
-            );
+            parties.delete(partyId);
+        } else {
+            party.members.delete(name);
         }
     }
-});
 
+    for (const [target, invites] of pendingInvites.entries()) {
+        pendingInvites.set(target, invites.filter(i => parties.has(i.partyId)));
+    }
+});
 

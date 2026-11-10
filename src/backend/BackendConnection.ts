@@ -14,6 +14,16 @@ export interface BackendPlayerPayload {
     device?: string;
 }
 
+export interface VoiceStatePayload {
+    roomCode: string;
+    gamertag: string;
+    connected: boolean;
+    muted: boolean;
+    speaking: boolean;
+    timestamp: number;
+    bridged: boolean;
+}
+
 interface ActivateResponse {
     success: boolean;
     backendId?: string;
@@ -52,6 +62,8 @@ export class BackendConnection {
             heartbeatInterval: number;
         }) => void,
         private readonly onRoom: (roomCode: string) => void,
+        private readonly onVoiceState?: (state: VoiceStatePayload) => void,
+        private readonly onVoiceReset?: () => void,
     ) { }
 
     get room(): string {
@@ -249,6 +261,21 @@ export class BackendConnection {
             });
         });
 
+        socket.on("voice-state", (data) => {
+            const s = data as Partial<VoiceStatePayload> | undefined;
+            if (!s || typeof s.gamertag !== "string") return;
+
+            this.onVoiceState?.({
+                roomCode: typeof s.roomCode === "string" ? s.roomCode : this.roomCode,
+                gamertag: s.gamertag,
+                connected: s.connected === true,
+                muted: s.muted === true,
+                speaking: s.speaking === true,
+                timestamp: typeof s.timestamp === "number" ? s.timestamp : Date.now(),
+                bridged: s.bridged === true,
+            });
+        });
+
         socket.on("backend-register-failed", (reason) => {
             console.warn(`[sculwave] Backend registration failed: ${String(reason)}`);
             this.authenticated = false;
@@ -268,12 +295,15 @@ export class BackendConnection {
             this.authToken = "";
             this.onRoom("");
             socket.disconnect();
+            this.onVoiceReset?.();
             this.scheduleReconnect();
         });
 
         socket.on("disconnect", (reason) => {
             this.authenticated = false;
+
             console.warn(`[sculwave] Socket.IO disconnected: ${String(reason)}`);
+            this.onVoiceReset?.();
             if (!this.shuttingDown) {
                 this.scheduleReconnect();
             }

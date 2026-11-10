@@ -511,7 +511,7 @@ system.afterEvents.scriptEventReceive.subscribe((event) => {
         }
     }
 });
-const RADIO_ID = "prox:sculwave_radio";
+const RADIO_ID = "prox:sculwave_mic";
 world.afterEvents.playerSpawn.subscribe((event) => {
     if (!event.initialSpawn)
         return;
@@ -552,7 +552,7 @@ world.afterEvents.worldLoad.subscribe(() => {
 system.runInterval(() => {
     sendHeartbeatIfDue();
 }, 20);
-// const RADIO_ID = "prox:sculwave_radio";
+// const RADIO_ID = "prox:sculwave_mic";
 // system.runInterval(() => {
 //     for (const player of world.getAllPlayers()) {
 //         if (isVoiceBanned(player.name)) continue;
