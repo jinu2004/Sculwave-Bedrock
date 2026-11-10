@@ -4,7 +4,7 @@ import { versionInfo } from './version';
 import { BackendConfig } from './generated/config';
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 const SERVER_URL = BackendConfig.serverUrl;
-const MENU_ITEM_ID = "prox:sculwave_radio";
+const MENU_ITEM_ID = "prox:sculwave_mic";
 const ACTIVATION_KEY_PROPERTY = "sculwave:activationKey";
 const INSTANCE_ID_PROPERTY = "sculwave:instance";
 const BACKEND_ID_PROPERTY = "sculwave:backend";

@@ -2,16 +2,16 @@
   "format_version": "1.20.20",
   "minecraft:item": {
     "description": {
-      "identifier": "prox:sculwave_radio",
+      "identifier": "prox:sculwave_mic",
       "menu_category": {
         "category": "items"
       }
     },
     "components": {
-      "minecraft:icon":"sculwave_radio_icon",
+      "minecraft:icon":"sculwave_mic",
       "minecraft:max_stack_size": 1,
       "minecraft:display_name": {
-        "value": "Sculwave Radio"
+        "value": "Sculwave Mic"
       },
       "minecraft:hand_equipped": false,
       "minecraft:keep_on_death": {},

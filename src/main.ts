@@ -7,7 +7,7 @@ import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
 
 
 const SERVER_URL = BackendConfig.serverUrl;
-const MENU_ITEM_ID = "prox:sculwave_radio";
+const MENU_ITEM_ID = "prox:sculwave_mic";
 const ACTIVATION_KEY_PROPERTY = "sculwave:activationKey";
 const INSTANCE_ID_PROPERTY = "sculwave:instance";
 const BACKEND_ID_PROPERTY = "sculwave:backend";
@@ -772,7 +772,7 @@ system.afterEvents.scriptEventReceive.subscribe((event) => {
     }
 });
 
-const RADIO_ID = "prox:sculwave_radio";
+const RADIO_ID = "prox:sculwave_mic";
 
 
 world.afterEvents.playerSpawn.subscribe((event) => {
@@ -825,7 +825,7 @@ system.runInterval(() => {
 }, 20);
 
 
-// const RADIO_ID = "prox:sculwave_radio";
+// const RADIO_ID = "prox:sculwave_mic";
 
 // system.runInterval(() => {
 //     for (const player of world.getAllPlayers()) {
