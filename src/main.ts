@@ -3,6 +3,10 @@ import { BackendConnection, BackendPlayerPayload, VoiceStatePayload } from './ba
 import { versionInfo } from './version';
 import { BackendConfig } from './generated/config';
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
+import {
+    TRANSPORT_KIND, describeTransport, handleTransportScriptEvent, isTransportPlayer,
+    onTransportPlayerLeave, onTransportPlayerSpawn, transportAdminCommand,
+} from './generated/transport';
 
 
 
@@ -28,6 +32,9 @@ const MIC_MUTED_ICON = "\uE401";
 const MIC_SPEAKING_ICON = "\uE402";
 
 const SERVER_URL_PROPERTY = "sculwave:serverUrl";
+const VOICE_ENABLED_PROPERTY = "sculwave:voiceEnabled";
+const ENTRY_POINT_PROPERTY = "sculwave:entryPoint";
+const ENTRY_PRIORITY_PROPERTY = "sculwave:entryPointPriority";
 
 function getServerUrl(): string {
     return (
@@ -68,7 +75,7 @@ const voiceStates = new Map<string, VoiceStatePayload>();
 
 
 function ensureMic(player: Player): void {
-    if (!player.isValid || isVoiceBanned(player.name)) return;
+    if (!player.isValid || isVoiceBanned(player.name) || isTransportPlayer(player.name)) return;
 
     const inv = player.getComponent("minecraft:inventory")?.container;
     if (!inv) return;
@@ -147,7 +154,7 @@ function handleVoiceState(state: VoiceStatePayload): void {
 function resetVoiceStates(): void {
     voiceStates.clear();
     for (const player of world.getAllPlayers()) {
-        if (!isVoiceBanned(player.name)) updateNameTag(player);
+        if (!isVoiceBanned(player.name) && !isTransportPlayer(player.name)) updateNameTag(player);
     }
 }
 
@@ -472,6 +479,31 @@ function setVoiceBan(playerName: string, banned: boolean) {
 
 
 
+/** Voice on this server. When off, players stay in the network but get no voice session here. */
+function isVoiceEnabled(): boolean {
+    return world.getDynamicProperty(VOICE_ENABLED_PROPERTY) !== false;
+}
+
+function getEntryPointSettings(): { enabled: boolean; priority: number | null } {
+    const enabled = world.getDynamicProperty(ENTRY_POINT_PROPERTY) === true;
+    const stored = world.getDynamicProperty(ENTRY_PRIORITY_PROPERTY);
+    const priority = typeof stored === "number" && Number.isInteger(stored) && stored >= 1 ? stored : 1;
+    return { enabled, priority: enabled ? priority : null };
+}
+
+/** Reconnects to SculWave. `forgetIdentity` registers this server as a new one (used when the URL changes). */
+function restartBackend(forgetIdentity: boolean): void {
+    backendConnection?.disconnect();
+    backendConnection = undefined;
+    serverRoomCode = "";
+    lastHeartbeatAt = 0;
+    if (forgetIdentity) {
+        instanceId = "";
+        backendId = "";
+    }
+    void initializeBackend();
+}
+
 async function initializeBackend(): Promise<void> {
     if (initializationInProgress) return;
 
@@ -521,6 +553,9 @@ async function initializeBackend(): Promise<void> {
             handleVoiceState, resetVoiceStates
         );
 
+        const entry = getEntryPointSettings();
+        backendConnection.setEntryPoint(entry.enabled, entry.priority);
+
         const activated = await backendConnection.activate();
         if (!activated) {
             scheduleActivationRetry();
@@ -548,7 +583,7 @@ function getPlayerData(): BackendPlayerPayload[] {
     const playerData: BackendPlayerPayload[] = [];
 
     for (const player of world.getAllPlayers()) {
-        if (isVoiceBanned(player.name)) continue;
+        if (isVoiceBanned(player.name) || isTransportPlayer(player.name)) continue;
 
         const pos = player.location;
         const settings = getPlayerSettings(player);
@@ -592,7 +627,7 @@ function sendHeartbeatIfDue(): void {
     if (now - lastHeartbeatAt < heartbeatIntervalMs) return;
 
     lastHeartbeatAt = now;
-    backendConnection.sendHeartbeat(getPlayerData(), true);
+    backendConnection.sendHeartbeat(getPlayerData(), isVoiceEnabled());
 }
 
 
@@ -794,6 +829,8 @@ async function showVoiceMenu(player: Player) {
 system.afterEvents.scriptEventReceive.subscribe((event) => {
 
     if (!event.id.startsWith("sculwave:")) return;
+    // Realm transport frames come from the bridge bot, which is not an admin.
+    if (handleTransportScriptEvent(event)) return;
     const sender = event.sourceEntity;
 
     if (!(sender instanceof Player)) {
@@ -809,6 +846,8 @@ system.afterEvents.scriptEventReceive.subscribe((event) => {
     if (!event.id.startsWith("sculwave:")) return;
 
     const target = event.message.trim();
+
+    if (transportAdminCommand(event.id, target, sender)) return;
 
     switch (event.id) {
 
@@ -875,13 +914,88 @@ system.afterEvents.scriptEventReceive.subscribe((event) => {
             break;
         }
 
+        case "sculwave:serverurl": {
+            const raw = event.message.trim();
+            if (TRANSPORT_KIND === "realm") {
+                sender.sendMessage("§e[Sculwave] The server address is not configurable on Realms.");
+                break;
+            }
+            if (!raw) {
+                sender.sendMessage(`§7Server URL: §f${getServerUrl()}\n§cUsage: /scriptevent sculwave:serverurl <https://your-domain>`);
+                break;
+            }
+            const url = raw.replace(/\/+$/, "");
+            if (!/^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/.test(url)) {
+                sender.sendMessage("§c[Sculwave] Use a plain address like https://voice.example.com (no path).");
+                break;
+            }
+            world.setDynamicProperty(SERVER_URL_PROPERTY, url);
+            sender.sendMessage(`§a[Sculwave] Server URL set to ${url}. Reconnecting...`);
+            restartBackend(true);
+            break;
+        }
+
+        case "sculwave:voice": {
+            if (TRANSPORT_KIND === "realm") {
+                sender.sendMessage("§e[Sculwave] Voice on/off is not used on Realms.");
+                break;
+            }
+            const arg = event.message.trim().toLowerCase();
+            if (arg !== "on" && arg !== "off") {
+                sender.sendMessage(`§7Voice: §f${isVoiceEnabled() ? "on" : "off"}\n§cUsage: /scriptevent sculwave:voice <on|off>`);
+                break;
+            }
+            world.setDynamicProperty(VOICE_ENABLED_PROPERTY, arg === "on");
+            lastHeartbeatAt = 0; // report the change at the next tick
+            sender.sendMessage(arg === "on"
+                ? "§a[Sculwave] Voice enabled on this server."
+                : "§e[Sculwave] Voice disabled on this server. Players stay in the network but get no voice here.");
+            break;
+        }
+
+        case "sculwave:entrypoint": {
+            if (TRANSPORT_KIND === "realm") {
+                sender.sendMessage("§e[Sculwave] Entry point settings are not used on Realms.");
+                break;
+            }
+            const [mode, prio] = event.message.trim().toLowerCase().split(/\s+/);
+            if (mode !== "on" && mode !== "off") {
+                const current = getEntryPointSettings();
+                sender.sendMessage(
+                    `§7Entry point: §f${current.enabled ? `on (priority ${current.priority})` : "off"}\n` +
+                    "§cUsage: /scriptevent sculwave:entrypoint <on [priority]|off>");
+                break;
+            }
+            if (mode === "on") {
+                const priority = prio === undefined ? 1 : Number(prio);
+                if (!Number.isInteger(priority) || priority < 1 || priority > 99) {
+                    sender.sendMessage("§c[Sculwave] Priority must be a whole number from 1 (preferred) to 99.");
+                    break;
+                }
+                world.setDynamicProperty(ENTRY_POINT_PROPERTY, true);
+                world.setDynamicProperty(ENTRY_PRIORITY_PROPERTY, priority);
+                sender.sendMessage(`§a[Sculwave] Entry point on, priority ${priority}. Re-registering...`);
+            } else {
+                world.setDynamicProperty(ENTRY_POINT_PROPERTY, false);
+                sender.sendMessage("§a[Sculwave] Entry point off. Re-registering...");
+            }
+            restartBackend(false);
+            break;
+        }
+
         case "sculwave:status": {
             sender.sendMessage(
                 `§6=== Sculwave ===\n` +
                 `§7Instance: §f${instanceId || "Not Activated"}\n` +
                 `§7Backend: §f${backendId || "Not Activated"}\n` +
                 `§7Room: §f${serverRoomCode || "Not Registered"}\n` +
-                `§7Connected: §f${backendConnection?.isAuthenticated ? "Yes" : "No"}`
+                `§7Connected: §f${backendConnection?.isAuthenticated ? "Yes" : "No"}\n` +
+                (TRANSPORT_KIND === "realm"
+                    ? ""
+                    : `§7Voice: §f${isVoiceEnabled() ? "on" : "off"}\n` +
+                      `§7Entry point: §f${getEntryPointSettings().enabled ? `on (priority ${getEntryPointSettings().priority})` : "off"}\n` +
+                      `§7Server URL: §f${getServerUrl()}\n`) +
+                `§7Transport: §f${TRANSPORT_KIND} - ${describeTransport()}`
             );
             break;
         }
@@ -944,6 +1058,11 @@ system.runInterval(() => {
 world.afterEvents.playerSpawn.subscribe((event) => {
     const player = event.player;
 
+    if (isTransportPlayer(player.name)) {
+        onTransportPlayerSpawn(player);
+        return; // the bridge bot is not a voice user
+    }
+
     if (isVoiceBanned(player.name)) {
         return; // don't send room code
     }
@@ -957,6 +1076,7 @@ world.afterEvents.playerSpawn.subscribe((event) => {
 
 world.afterEvents.playerLeave.subscribe((event) => {
     const name = event.playerName;
+    onTransportPlayerLeave(name);
     playerSettings.delete(name);
     pendingInvites.delete(name);
     voiceStates.delete(name.toLowerCase());

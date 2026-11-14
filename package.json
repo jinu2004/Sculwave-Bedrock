@@ -10,7 +10,8 @@
   "main": "BP/scripts/main.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "node build.js"
+    "build": "node build.js",
+    "build:realm": "node build.js --realm"
   },
   "keywords": [],
   "author": "",

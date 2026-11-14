@@ -1,0 +1,50 @@
+{
+    "format_version": 2,
+    "header": {
+        "name": "Sculwave Bedrock",
+        "description": "Communicator between minecraft Realm and server (via bridge)",
+        "uuid": "723b51e9-890e-43ba-af91-8fbe10be1d9b",
+        "version": [
+            1,
+            1,
+            1
+        ],
+        "min_engine_version": [
+            1,
+            26,
+            60
+        ]
+    },
+    "modules": [
+        {
+            "description": "Scripting Entry Module",
+            "uuid": "6f2bc247-f35d-48a5-8bc7-0b37a74c4c11",
+            "version": [
+                1,
+                0,
+                0
+            ],
+            "type": "script",
+            "language": "javascript",
+            "entry": "scripts/main.js"
+        }
+    ],
+    "dependencies": [
+        {
+            "module_name": "@minecraft/server",
+            "version": "2.9.0"
+        },
+        {
+            "module_name": "@minecraft/server-ui",
+            "version": "2.0.0"
+        },
+        {
+            "uuid": "59c98ba8-d820-4e31-8ca6-6cc800ffb574",
+            "version": [
+                1,
+                0,
+                0
+            ]
+        }
+    ]
+}

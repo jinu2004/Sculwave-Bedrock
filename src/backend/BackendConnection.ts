@@ -1,6 +1,6 @@
-import { HttpHeader, HttpRequest, HttpRequestMethod, http } from '@minecraft/server-net';
 import { system } from '@minecraft/server';
-import { SocketIOClient } from './SocketIOClient';
+import { createHttp, createSocket } from '../generated/transport';
+import type { BackendHttp, BackendSocket } from '../transport/types';
 
 export interface BackendPlayerPayload {
     gamertag: string;
@@ -38,11 +38,14 @@ interface RegisterSuccess {
 }
 
 export class BackendConnection {
-    private socket: SocketIOClient | undefined;
+    private socket: BackendSocket | undefined;
+    private readonly http: BackendHttp = createHttp();
     private reconnectScheduled = false;
     private activationInProgress = false;
     private heartbeatIntervalMs = 1000;
     private shuttingDown = false;
+    private entryPoint = false;
+    private entryPointPriority: number | null = null;
 
     private roomCode = "";
     private authToken = "";
@@ -86,6 +89,12 @@ export class BackendConnection {
         this.activationKey = value.trim();
     }
 
+    /** Entry point flag and priority (1 = preferred, 2, 3... = fallbacks) sent when activating. */
+    setEntryPoint(enabled: boolean, priority: number | null): void {
+        this.entryPoint = enabled;
+        this.entryPointPriority = enabled ? priority : null;
+    }
+
     setIdentity(backendId: string, instanceId: string): void {
         this.backendId = backendId;
         this.instanceId = instanceId;
@@ -101,12 +110,6 @@ export class BackendConnection {
         this.activationInProgress = true;
 
         try {
-            const request = new HttpRequest(`${this.serverUrl}/api/backend/activate`);
-            request.setMethod(HttpRequestMethod.Post);
-            request.setHeaders([
-                new HttpHeader("Content-Type", "application/json"),
-            ]);
-
             const payload = {
                 activationKey: this.activationKey,
                 backendId: this.backendId || null,
@@ -114,19 +117,11 @@ export class BackendConnection {
                 platform: "bedrock",
                 pluginVersion: this.pluginVersion,
                 minecraftVersion: this.minecraftVersion,
-
-                // These must be populated with the values expected by your backend.
-                entryPoint: "bedrock",
-                entryPointPriority: 0,
+                entryPoint: this.entryPoint,
+                entryPointPriority: this.entryPoint ? (this.entryPointPriority ?? 1) : null,
             };
 
-
-
-
-
-            request.setBody(JSON.stringify(payload));
-
-            const response = await http.request(request);
+            const response = await this.http.postJson(this.serverUrl, "/api/backend/activate", payload);
             let data: ActivateResponse;
 
             try {
@@ -180,7 +175,7 @@ export class BackendConnection {
         if (this.socket?.isConnected) return;
 
         this.socket?.disconnect();
-        this.socket = new SocketIOClient(this.serverUrl, "/backend");
+        this.socket = createSocket(this.serverUrl, "/backend");
         this.bindSocketEvents(this.socket);
 
         try {
@@ -228,7 +223,7 @@ export class BackendConnection {
 
     }
 
-    private bindSocketEvents(socket: SocketIOClient): void {
+    private bindSocketEvents(socket: BackendSocket): void {
         socket.on("connect", () => {
             console.info("[sculwave] Socket.IO connected to /backend.");
             this.authenticated = false;

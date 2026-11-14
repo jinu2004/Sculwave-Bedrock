@@ -6,5 +6,6 @@ export const BackendConfig = {
     "pluginVersion": "1.1.0",
     "minecraftVersion": "1.26.60.6",
     "entryPoint": "bedrock",
-    "entryPointPriority": 0
+    "entryPointPriority": 0,
+    "realmBridgeGamertag": ""
 } as const;
