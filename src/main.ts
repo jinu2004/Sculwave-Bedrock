@@ -3,6 +3,7 @@ import { BackendConnection, BackendPlayerPayload, VoiceStatePayload } from './ba
 import { versionInfo } from './version';
 import { BackendConfig } from './generated/config';
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
+import { ICON, COLOR, formTitle, line, body, button, backButton } from "./ui";
 import {
     TRANSPORT_KIND, describeTransport, handleTransportScriptEvent, isTransportPlayer,
     onTransportPlayerLeave, onTransportPlayerSpawn, transportAdminCommand,
@@ -201,9 +202,9 @@ async function showInviteMenu(player: Player) {
     }
 
     const modal = new ModalFormData()
-        .title("Invite Player")
+        .title(formTitle("Invite Player"))
         .textField(
-            "Enter player's gamertag",
+            "Gamertag of the player to invite",
             "Steve"
         );
 
@@ -270,10 +271,12 @@ async function showInvitesMenu(player: Player) {
         return;
     }
 
-    const form = new ActionFormData().title("Party Invites");
+    const form = new ActionFormData()
+        .title(formTitle("Invites"))
+        .body(body([line("Pending", `§e${invites.length}`)], "Pick an invite to accept or reject it."));
 
     for (const invite of invites) {
-        form.button(`${invite.owner}'s Party`);
+        button(form, `${invite.owner}'s Party`, "primary", ICON.head);
     }
 
     const result = await form.show(player);
@@ -298,10 +301,11 @@ async function showInviteActions(
     if (!invite) return
 
     const form = new ActionFormData()
-        .title(`${invite.owner}'s Party`)
-        .button("§aAccept Invite")
-        .button("§cReject Invite")
-        .button("§7Back");
+        .title(formTitle(`${invite.owner}'s Party`))
+        .body(body([line("From", `§e${invite.owner}`)], "Accepting puts you on this party's voice channel."));
+    button(form, "Accept Invite", "good", ICON.accept);
+    button(form, "Reject Invite", "danger", ICON.reject);
+    backButton(form);
 
     const result = await form.show(player);
 
@@ -390,13 +394,14 @@ async function showManageMembersMenu(player: Player) {
             );
 
     const form = new ActionFormData()
-        .title("§bManage Members");
+        .title(formTitle("Manage Members"))
+        .body(body([line("Members", `§e${members.length}`)], "Pick a member to kick or hand the party to."));
 
     for (const member of members) {
-        form.button(member);
+        button(form, member, "primary", ICON.head);
     }
 
-    form.button("§cBack");
+    backButton(form);
 
     const result = await form.show(player);
 
@@ -421,10 +426,11 @@ async function showMemberActions(
 
     const form =
         new ActionFormData()
-            .title(memberName)
-            .button("§cKick Player")
-            .button("§eTransfer Ownership")
-            .button("§7Cancel");
+            .title(formTitle(memberName))
+            .body(body([line("Player", `§f${memberName}`)]));
+    button(form, "Kick Player", "danger", ICON.leave);
+    button(form, "Transfer Ownership", "warn", ICON.transfer);
+    backButton(form, "Cancel");
 
     const result = await form.show(owner);
 
@@ -665,16 +671,18 @@ async function showpartiesMenu(player: Player) {
     }
 
     const form = new ActionFormData()
-        .title("§bSculwave > Parties")
+        .title(formTitle("Parties"))
         .body(
-            `Channel: ${currentPartyDisplay}\n\n` +
-            `§7Party members can hear each other across the entire world.`
-        )
-        .button("§eInvite Player")
-        .button(`§dInvites (${inviteCount})`)
-        .button("§bView Members")
-        .button("§cLeave Party")
-        .button("§cBack");
+            body(
+                [line("Channel", currentPartyDisplay)],
+                "Party members can hear each other across the entire world."
+            )
+        );
+    button(form, "Invite Player", "warn", ICON.invite);
+    button(form, `Invites (${inviteCount})`, "primary", ICON.invites);
+    button(form, "View Members", "primary", ICON.party);
+    button(form, "Leave Party", "danger", ICON.leave);
+    backButton(form);
 
     const result = await form.show(player);
 
@@ -715,24 +723,26 @@ async function showpartiesMenu(player: Player) {
             }
 
             const memberForm = new ActionFormData()
-                .title("§bParty Members")
+                .title(formTitle("Party Members"))
                 .body(
-                    `§7Owner: §e${party.owner}\n\n` +
-                    `§bMembers (${party.members.size})`
+                    body([
+                        line("Owner", `§e${party.owner}`),
+                        line("Members", `§f${party.members.size}`),
+                    ])
                 );
 
             for (const member of party.members) {
 
                 const isOwner = member === party.owner;
 
-                memberForm.button(
-                    isOwner
-                        ? `§e${member}`
-                        : `§7${member}`
-                );
+                if (isOwner) {
+                    button(memberForm, `${member}  §8(owner)`, "warn", ICON.owner);
+                } else {
+                    button(memberForm, member, "primary", ICON.head);
+                }
             }
 
-            memberForm.button("§cBack");
+            backButton(memberForm);
 
             memberForm.show(player).then(() => {
                 system.run(() =>
@@ -786,7 +796,7 @@ async function showpartiesMenu(player: Player) {
 
 async function showVoiceMenu(player: Player) {
     const settings = getPlayerSettings(player);
-    let groupLabel = "§7None (sculwave)";
+    let groupLabel = "§7None";
     if (settings.groupId) {
         const currentGroup = parties.get(settings.groupId);
         if (currentGroup) {
@@ -794,15 +804,21 @@ async function showVoiceMenu(player: Player) {
         }
     }
     const form = new ActionFormData()
-        .title("§bSculwave Main Menu")
+        .title(formTitle("Voice Menu"))
         .body(
-            `Mic Status: ${settings.isMuted ? "§cMUTED" : "§aACTIVE"}\n` +
-            `Group: ${groupLabel}\n` +
-            `Room Code: §e${serverRoomCode || "Connecting..."}`
-        )
-        .button(settings.isMuted ? "§aUnmute Mic" : "§cMute Mic")
-        .button("§bManage parties",)
-        .button("§cClose Menu");
+            body([
+                line("Mic", settings.isMuted ? "§cMuted" : "§aActive"),
+                line("Party", groupLabel),
+                line("Room code", `§e${serverRoomCode || "Connecting..."}`),
+            ])
+        );
+    if (settings.isMuted) {
+        button(form, "Unmute Mic", "good", ICON.micOn);
+    } else {
+        button(form, "Mute Mic", "danger", ICON.micOff);
+    }
+    button(form, "Parties", "primary", ICON.party);
+    backButton(form, "Close");
 
     const result = await form.show(player);
     if (result.canceled) return;
